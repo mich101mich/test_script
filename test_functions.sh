@@ -87,7 +87,7 @@ function try_silent {
         echo "### Log for $*"
         echo "### This file is meant to be output to a terminal, so it still contains escape"
         echo "### sequences for coloring. If you want to read the log, use"
-        echo "###     cat \"${tmp_file}\""
+        echo "###     tail -n +7 \"${tmp_file}\""
         echo "################################################################################"
     } > "${tmp_file}"
 
@@ -97,7 +97,7 @@ function try_silent {
 
     # Check if the command failed. Other means of checking the result would instead check the result of handle_output
     if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
-        cat "${tmp_file}"
+        tail -n +7 "${tmp_file}"
         return 1
     fi
 }
