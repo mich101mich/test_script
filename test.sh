@@ -1,0 +1,80 @@
+#!/bin/bash -e
+
+source "$(realpath "$(dirname "$0")")/test_functions.sh"
+
+# Check if all required parameter variables are set
+# Can't use a loop here because shellcheck needs to know about this too
+
+# The base directory of the crate
+[[ -v base_dir ]] || throw "test.sh parameter variable base_dir is not set"
+# Optional: An array of subdirectories of the crate. Defaults to an empty array
+[[ -v sub_directories ]] || sub_directories=()
+# Optional: Whether the crate is a procedural macro crate. Defaults to 0 (no)
+[[ -v is_proc_macro ]] || is_proc_macro=0
+
+########
+# setup
+########
+echo "Setup"
+
+overwrite=0
+if [[ "$1" == "overwrite" ]]; then
+    overwrite=1
+elif [[ -n "$1" ]]; then
+    throw "Usage: $0 [overwrite]"
+fi
+
+try_silent rustup update
+
+export RUSTFLAGS="-D warnings"
+export RUSTDOCFLAGS="-D warnings"
+
+########
+# main tests
+########
+for dir in "${base_dir}/" "${sub_directories[@]}"; do
+    relative_dir="${dir#"${base_dir}/"}"
+    if [[ "$relative_dir" == "" ]]; then
+        echo "Base Tests"
+    else
+        echo "Subdirectory Tests: ${relative_dir}"
+    fi
+    cd "${dir}"
+    try_silent cargo update
+    try_silent cargo +stable test
+    try_silent cargo +nightly test
+    try_silent cargo +nightly doc --no-deps
+    try_silent cargo +nightly clippy -- -D warnings
+    try_silent cargo +stable fmt --check
+done
+
+if [[ "${is_proc_macro}" -eq 1 ]]; then
+    echo "Error Message Tests"
+    run_error_message_tests "tests/fail" "${overwrite}"
+fi
+
+########
+# minimum supported rust version
+########
+echo "Minimum Supported Rust Version Tests"
+
+MSRV=$(read_msrv "${base_dir}/Cargo.toml")
+echo "    Minimum supported Rust version: ${MSRV}"
+create_and_cd_test_dir "${base_dir}" "msrv_${MSRV}" "${sub_directories[@]}"
+
+try_silent rustup install "${MSRV}"
+try_silent cargo "+${MSRV}" test --tests # only run --tests, which excludes the doctests from Readme.md
+
+########
+# minimal versions
+########
+echo "Minimal Versions Tests"
+
+create_and_cd_test_dir "${base_dir}" "min_versions" "${sub_directories[@]}"
+try_silent cargo +nightly -Z minimal-versions update
+
+try_silent cargo +stable test
+try_silent cargo +nightly test
+
+########
+echo "All tests passed!"

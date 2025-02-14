@@ -9,12 +9,20 @@
 # General functions
 ##########
 
+# Prints a message to stderr
+# Usage: echo_err <message...>
+# Parameters:
+#   $1..n: The message to print
+function echo_err {
+    echo "$*" >&2
+}
+
 # Prints an error message to stderr and exits the script
 # Usage: throw <message...>
 # Parameters:
 #   $1..n: The error message to print
 function throw {
-    >&2 echo "$*"
+    echo_err "$*"
     exit 1
 }
 
@@ -35,6 +43,15 @@ function assert_has_parameters {
     done
 }
 
+function set_string_length {
+    local string="$1"
+    local length="$2"
+    assert_has_parameters set_string_length "string" "length"
+
+    string="${string:0:${length}}" # Truncate the string if it is too long
+    printf "%-${length}s" "${string}" # Pad the string if it is too short to clear any previous output
+}
+
 # Handles test output. Output is forked to a file and the most recent line is shown in the terminal.
 # Usage: <other_command> | handle_output <file>
 # Parameters:
@@ -48,10 +65,10 @@ function handle_output {
     while IFS='' read -r line; do
         echo "${line}" >> "${tmp_file}"
 
-        echo -en "\033[2K\r" # Clear the line
-        echo -n "$(cut -c "1-$(tput cols)" <<< "> ${line}")" # Print as much of the line as fits in the terminal
+        echo -n "$(set_string_length "> ${line}" "$(tput cols)")" # re-read tput every time in case of a resize
+        echo -en "\r" # Return to the beginning of the line
     done
-    echo -en "\033[2K\r";
+    echo -en "\033[2K\r"; # Clear the line
     tput init # Reset any coloring
 }
 
@@ -62,7 +79,7 @@ function handle_output {
 #   $1..n: The command to run, including any arguments
 # Returns: 1 if the command failed, 0 otherwise
 function try_silent {
-    echo "Running $*"
+    echo "    Running $*"
     tmp_file="$(mktemp)"
 
     # unbuffer: Tell the program to print its output as if it wasn't piped. Usually, programs disable colouring when
@@ -88,7 +105,7 @@ function read_msrv {
     local msrv
     msrv=$(sed -n -r -e 's/^rust-version = "(.*)"$/\1/p' "${toml_file}")
     if [[ -z "${msrv}" ]]; then
-        return 1
+        throw "Failed to read MSRV from ${toml_file}"
     fi
     echo "${msrv}"
 }
@@ -121,18 +138,6 @@ function create_and_cd_test_dir {
     cd "${target_dir}"
 }
 
-# Runs the tests for the root directory of the project
-# Usage: run_base_tests
-function run_base_tests {
-    try_silent rustup update
-    try_silent cargo update
-    try_silent cargo +stable test
-    try_silent cargo +nightly test
-    try_silent cargo +nightly doc --no-deps
-    try_silent cargo +nightly clippy -- -D warnings
-    try_silent cargo +stable fmt --check
-}
-
 ##########
 # Procedural macro specific functions
 ##########
@@ -159,13 +164,13 @@ function compare_files {
     assert_has_parameters compare_files "a" "b"
 
     if [[ ! -f "${a}" ]]; then
-        >&2 echo "File ${a} missing"
+        echo_err "File ${a} missing"
         return 1
     elif [[ ! -f "${b}" ]]; then
-        >&2 echo "File ${b} missing"
+        echo_err "File ${b} missing"
         return 1
     elif ! cmp -s "${a}" "${b}"; then
-        >&2 echo "File ${a} and ${b} differ"
+        echo_err "File ${a} and ${b} differ"
         return 1
     fi
 }
@@ -188,7 +193,7 @@ function run_error_message_tests {
     while IFS= read -r -d $'\0' stable_dir; do
         local nightly_dir="${stable_dir%/stable}/nightly"
         if [[ ! -d "${nightly_dir}" ]]; then
-            >&2 echo "No nightly directory for ${stable_dir}"
+            echo_err "No nightly directory for ${stable_dir}"
             error=1
             continue
         fi
@@ -204,7 +209,7 @@ function run_error_message_tests {
     while IFS= read -r -d $'\0' nightly_dir; do
         stable_dir="${nightly_dir%/nightly}/stable"
         if [[ ! -d "${stable_dir}" ]]; then
-            >&2 echo "No stable directory for ${nightly_dir}"
+            echo_err "No stable directory for ${nightly_dir}"
             error=1
             continue
         fi
@@ -246,18 +251,18 @@ function run_error_message_tests {
         for file in "${test_files[@]}"; do
             stderr_file="${file%.rs}.stderr"
             if [[ ! -f "${stable_dir}/${stderr_file}" ]]; then
-                >&2 echo "File ${stderr_file} missing in ${stable_dir}"
+                echo_err "File ${stderr_file} missing in ${stable_dir}"
                 error=1
                 continue
             fi
             if [[ ! -f "${nightly_dir}/${stderr_file}" ]]; then
-                >&2 echo "File ${stderr_file} missing in ${nightly_dir}"
+                echo_err "File ${stderr_file} missing in ${nightly_dir}"
                 error=1
                 continue
             fi
             # Compare the contents of the stderr files, but ignore the path differences between stable and nightly
             if cmp -s "${stable_dir}/${stderr_file}" <(sed -e 's/nightly/stable/g' "${nightly_dir}/${stderr_file}"); then
-                >&2 echo "File ${stable_dir}/${stderr_file} is the same between stable and nightly"
+                echo_err "File ${stable_dir}/${stderr_file} is the same between stable and nightly"
                 error=1
             fi
         done
