@@ -32,14 +32,13 @@ export RUSTDOCFLAGS="-D warnings"
 ########
 # main tests
 ########
-for dir in "${base_dir}/" "${sub_directories[@]}"; do
-    relative_dir="${dir#"${base_dir}/"}"
+for relative_dir in "" "${sub_directories[@]}"; do
     if [[ "$relative_dir" == "" ]]; then
         echo "Base Tests"
     else
         echo "Subdirectory Tests: ${relative_dir}"
     fi
-    cd "${dir}"
+    cd "${base_dir}/${relative_dir}"
     try_silent cargo update
     try_silent cargo +stable test
     try_silent cargo +nightly test

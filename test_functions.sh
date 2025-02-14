@@ -61,11 +61,10 @@ function handle_output {
     local tmp_file="$1"
     assert_has_parameters handle_output "tmp_file"
 
-    rm -f "${tmp_file}" # Clear output from previous runs
     while IFS='' read -r line; do
         echo "${line}" >> "${tmp_file}"
 
-        echo -n "$(set_string_length "> ${line}" "$(tput cols)")" # re-read tput every time in case of a resize
+        echo -n "$(set_string_length "    > ${line}" "$(tput cols)")" # re-read tput every time in case of a resize
         echo -en "\r" # Return to the beginning of the line
     done
     echo -en "\033[2K\r"; # Clear the line
@@ -80,7 +79,17 @@ function handle_output {
 # Returns: 1 if the command failed, 0 otherwise
 function try_silent {
     echo "    Running $*"
-    tmp_file="$(mktemp)"
+
+    local tmp_file="target/test.log"
+    mkdir -p target
+    {
+        echo "################################################################################"
+        echo "### Log for $*"
+        echo "### This file is meant to be output to a terminal, so it still contains escape"
+        echo "### sequences for coloring. If you want to read the log, use"
+        echo "###     cat \"${tmp_file}\""
+        echo "################################################################################"
+    } > "${tmp_file}"
 
     # unbuffer: Tell the program to print its output as if it wasn't piped. Usually, programs disable colouring when
     # piped, but we want to keep it, since we are showing the output in the terminal.
