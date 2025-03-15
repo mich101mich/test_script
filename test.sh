@@ -8,7 +8,16 @@ source "$(realpath "$(dirname "$0")")/test_functions.sh"
 # The base directory of the crate
 [[ -v base_dir ]] || throw "test.sh parameter variable base_dir is not set"
 # Optional: An array of subdirectories of the crate. Defaults to an empty array
-[[ -v sub_directories ]] || sub_directories=()
+if [[ -v sub_directories ]]; then
+    read -r -a sub_directories <<< "${sub_directories}" # Split the string into an array
+    for sub_directory in "${sub_directories[@]}"; do
+        if [[ ! -d "${base_dir}/${sub_directory}" ]]; then
+            throw "Subdirectory ${sub_directory} does not exist"
+        fi
+    done
+else
+    sub_directories=()
+fi
 # Optional: Whether the crate is a procedural macro crate. Defaults to 0 (no)
 [[ -v is_proc_macro ]] || is_proc_macro=0
 
