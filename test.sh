@@ -56,9 +56,11 @@ for relative_dir in "" "${sub_directories[@]}"; do
     try_silent cargo +stable fmt --check
 done
 
+cd "${base_dir}"
+
 if [[ "${is_proc_macro}" -eq 1 ]]; then
     echo "Error Message Tests"
-    run_error_message_tests "tests/fail" "${overwrite}"
+    run_error_message_tests "${base_dir}/tests/fail" "${overwrite}"
 fi
 
 ########
