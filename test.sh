@@ -1,5 +1,7 @@
 #!/bin/bash -e
 
+start_time=$(date +%s)
+
 source "$(realpath "$(dirname "$0")")/test_functions.sh"
 
 # Check if all required parameter variables are set
@@ -9,7 +11,7 @@ source "$(realpath "$(dirname "$0")")/test_functions.sh"
 [[ -v base_dir ]] || throw "test.sh parameter variable base_dir is not set"
 # Optional: An array of subdirectories of the crate. Defaults to an empty array
 if [[ -v sub_directories ]]; then
-    read -r -a sub_directories <<< "${sub_directories}" # Split the string into an array
+    read -r -a sub_directories <<<"${sub_directories}" # Split the string into an array
     for sub_directory in "${sub_directories[@]}"; do
         if [[ ! -d "${base_dir}/${sub_directory}" ]]; then
             throw "Subdirectory ${sub_directory} does not exist"
@@ -87,4 +89,6 @@ try_silent cargo +stable test
 try_silent cargo +nightly test
 
 ########
-echo "All tests passed!"
+end_time=$(date +%s)
+elapsed_time=$((end_time - start_time))
+echo "All tests passed in ${elapsed_time} seconds!"
