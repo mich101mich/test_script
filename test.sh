@@ -75,7 +75,7 @@ echo "    Minimum supported Rust version: ${MSRV}"
 create_and_cd_test_dir "${base_dir}" "msrv_${MSRV}" "${sub_directories[@]}"
 
 try_silent rustup install "${MSRV}"
-try_silent cargo "+${MSRV}" test --tests # only run --tests, which excludes the doctests from Readme.md
+try_silent cargo "+${MSRV}" test
 
 ########
 # minimal versions
