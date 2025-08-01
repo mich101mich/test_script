@@ -15,6 +15,8 @@ if [[ -v sub_directories ]]; then
     for sub_directory in "${sub_directories[@]}"; do
         if [[ ! -d "${base_dir}/${sub_directory}" ]]; then
             throw "Subdirectory ${sub_directory} does not exist"
+        elif [[ ! -f "${base_dir}/${sub_directory}/Cargo.toml" ]]; then
+            throw "Subdirectory ${sub_directory} does not contain a Cargo.toml file"
         fi
     done
 else
@@ -35,10 +37,12 @@ elif [[ -n "$1" ]]; then
     throw "Usage: $0 [overwrite]"
 fi
 
-try_silent rustup update
-
 export RUSTFLAGS="-D warnings"
 export RUSTDOCFLAGS="-D warnings"
+export CARGO_TARGET_DIR="${base_dir}/target"
+mkdir -p "${CARGO_TARGET_DIR}"
+
+try_silent rustup update
 
 ########
 # main tests
@@ -50,6 +54,9 @@ for relative_dir in "" "${sub_directories[@]}"; do
         echo "Subdirectory Tests: ${relative_dir}"
     fi
     cd "${base_dir}/${relative_dir}"
+
+    export CARGO_TARGET_DIR="${base_dir}/target/${relative_dir}" # Have all compile output in the root target directory
+
     try_silent cargo update
     try_silent cargo +stable test
     try_silent cargo +nightly test
@@ -57,6 +64,7 @@ for relative_dir in "" "${sub_directories[@]}"; do
     try_silent cargo +nightly clippy -- -D warnings
     try_silent cargo +stable fmt --check
 done
+export CARGO_TARGET_DIR="${base_dir}/target"
 
 cd "${base_dir}"
 
@@ -72,6 +80,14 @@ echo "Minimum Supported Rust Version Tests"
 
 MSRV=$(read_msrv "${base_dir}/Cargo.toml")
 echo "    Minimum supported Rust version: ${MSRV}"
+
+for sub_directory in "${sub_directories[@]}"; do
+    sub_msrv=$(read_msrv "${base_dir}/${sub_directory}/Cargo.toml")
+    if [[ "$sub_msrv" != "$MSRV" ]]; then
+        throw "Subdirectory ${sub_directory} has a different MSRV (${sub_msrv}) than the base directory (${MSRV})"
+    fi
+done
+
 create_and_cd_test_dir "${base_dir}" "msrv_${MSRV}" "${sub_directories[@]}"
 
 try_silent rustup install "${MSRV}"

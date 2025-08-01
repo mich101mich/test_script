@@ -80,8 +80,7 @@ function handle_output {
 function try_silent {
     echo "    Running $*"
 
-    local tmp_file="target/test.log"
-    mkdir -p target
+    local tmp_file="${CARGO_TARGET_DIR:?}/test.log"
     {
         echo "################################################################################"
         echo "### Log for $*"
