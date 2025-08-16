@@ -233,7 +233,7 @@ function run_error_message_tests {
 
     # Run the tests
     if [[ ${overwrite} -eq 1 ]]; then
-        echo "Trybuild overwrite mode enabled"
+        echo "    Trybuild overwrite mode enabled"
         export TRYBUILD=overwrite
 
         # "overwrite" will (as the name implies) overwrite any incorrect output files in the error_message_tests.
