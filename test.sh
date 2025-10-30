@@ -22,6 +22,9 @@ if [[ -v sub_directories ]]; then
 else
     sub_directories=()
 fi
+# Optional: Overrides for dependencies in MSRV builds
+[[ -v msrv_overrides ]] || msrv_overrides=""
+
 # Optional: Whether the crate is a procedural macro crate. Defaults to 0 (no)
 [[ -v is_proc_macro ]] || is_proc_macro=0
 
@@ -91,6 +94,10 @@ done
 create_and_cd_test_dir "${base_dir}" "msrv_${MSRV}" "${sub_directories[@]}"
 
 try_silent rustup install "${MSRV}"
+try_silent cargo "+${MSRV}" update
+for override in ${msrv_overrides}; do
+    try_silent cargo "+${MSRV}" update -p "${override%@*}" --precise "${override#*@}"
+done
 try_silent cargo "+${MSRV}" test
 
 ########

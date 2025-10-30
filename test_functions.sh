@@ -81,6 +81,7 @@ function try_silent {
     echo "    Running $*"
 
     local tmp_file="${CARGO_TARGET_DIR:?}/test.log"
+    mkdir -p "$(dirname "${tmp_file}")"
     {
         echo "################################################################################"
         echo "### Log for $*"
