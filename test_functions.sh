@@ -159,11 +159,15 @@ function assert_no_change {
     local dir="$1"
     assert_has_parameters assert_no_change "dir"
 
-    if ! git diff-files --quiet --ignore-cr-at-eol "${dir}"; then
-        throw "Changes in ${dir} detected, aborting"
-    fi
-    if [[ -n "$(git ls-files --exclude-standard --others "${dir}")" ]]; then
-        throw "Untracked files in ${dir} detected, aborting"
+    error=0
+    while IFS= read -r -d $'\0' file; do
+        [[ $file != *.stderr ]] && continue # Ignore non-stderr files
+        echo_err "Unstaged change in ${file} detected"
+        error=1
+    done < <(git ls-files --exclude-standard --modified --others -z -- "${dir}")
+
+    if [[ ${error} -ne 0 ]]; then
+        exit 1
     fi
 }
 
@@ -238,16 +242,54 @@ function run_error_message_tests {
         export TRYBUILD=overwrite
 
         # "overwrite" will (as the name implies) overwrite any incorrect output files in the error_message_tests.
-        # There is however the problem that the stable and nightly versions might have different outputs. If they
-        # are simply run one after the other, then the second one will overwrite the first one. To avoid this, we
-        # use git to check if the files have changed after every step.
-        assert_no_change "${fail_dir}/**/*.stderr" # Check for initial changes that would skew the later checks
+        # First verify that there are no previous changes
+        assert_no_change "${fail_dir}"
 
+        # Run stable tests
         try_silent cargo +stable test error_message_tests -- --ignored
-        assert_no_change "${fail_dir}/**/*.stderr"
+        # Verify that no overwrites were made by stable tests
+        assert_no_change "${fail_dir}"
 
+        # Run nightly tests
         try_silent cargo +nightly test error_message_tests -- --ignored
-        assert_no_change "${fail_dir}/**/*.stderr"
+
+        # Record which files were changed by nightly tests
+        while IFS= read -r -d $'\0' file; do
+            [[ $file != *.stderr ]] && continue # Ignore non-stderr files
+
+            error=1
+
+            if [[ $file == */nightly/* ]]; then
+                echo_err "Unstaged change in ${file} detected"
+                continue # Already in nightly folder, so just print error
+            fi
+
+            echo_err "File ${file} changed by nightly tests, splitting into stable/nightly variants"
+
+            # This file was changed by nightly but not by stable (since we asserted no changes after stable)
+            # So we need to split it into stable/nightly variants
+            local base_dir filename
+            base_dir="$(dirname "${file}")"
+            filename="$(basename "${file}")"
+
+            # Create stable/nightly folders if they don't exist
+            mkdir -p "${base_dir}/stable" "${base_dir}/nightly"
+
+            # Copy .rs file to stable and nightly
+            local rs_file="${file%.stderr}.rs"
+            cp "${rs_file}" "${base_dir}/stable/"
+            mv "${rs_file}" "${base_dir}/nightly/"
+
+            # Copy stderr files to their respective folders, adjusting paths
+            sed -e "s|${base_dir}/|${base_dir}/nightly/|g" "${file}" > "${base_dir}/nightly/${filename}"
+            git checkout -- "${file}" # Get the original stderr file for stable
+            sed -e "s|${base_dir}/|${base_dir}/stable/|g" "${file}" > "${base_dir}/stable/${filename}"
+            rm "${file}"
+        done < <(git ls-files --modified -z -- "${fail_dir}")
+
+        if [[ ${error} -eq 1 ]]; then
+            exit 1
+        fi
     else
         unset TRYBUILD # Remove TRYBUILD flag if it was set
         try_silent cargo +stable test error_message_tests -- --ignored
@@ -256,7 +298,8 @@ function run_error_message_tests {
 
     # Check that the stable and nightly distinction is actually used
     for stable_dir in "${stable_dirs[@]}"; do
-        local nightly_dir="${stable_dir}/../nightly"
+        local base_dir="${stable_dir}/.."
+        local nightly_dir="${base_dir}/nightly"
         for file in "${test_files[@]}"; do
             stderr_file="${file%.rs}.stderr"
             if [[ ! -f "${stable_dir}/${stderr_file}" ]]; then
@@ -271,7 +314,15 @@ function run_error_message_tests {
             fi
             # Compare the contents of the stderr files, but ignore the path differences between stable and nightly
             if cmp -s "${stable_dir}/${stderr_file}" <(sed -e 's/nightly/stable/g' "${nightly_dir}/${stderr_file}"); then
-                echo_err "File ${stable_dir}/${stderr_file} is the same between stable and nightly"
+                if [[ ${overwrite} -eq 1 ]]; then
+                    echo_err "File ${stable_dir}/${stderr_file} is the same between stable and nightly, overwriting to unify"
+                    mv "${stable_dir}/${file}" "${base_dir}/${file}"
+                    sed -e 's|/stable/|/|g' "${stable_dir}/${stderr_file}" > "${base_dir}/${stderr_file}"
+                    rm "${stable_dir}/${stderr_file}" "${nightly_dir}/${file}" "${nightly_dir}/${stderr_file}"
+                else
+                    echo_err "File ${stable_dir}/${stderr_file} is the same between stable and nightly"
+                fi
+
                 error=1
             fi
         done
