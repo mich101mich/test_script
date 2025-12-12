@@ -43,6 +43,21 @@ function assert_has_parameters {
     done
 }
 
+# Asserts that a command is available in the system
+# Usage: require_cmd <command>
+# Parameters:
+#   $1: The command to check
+function require_cmd() {
+    local cmd="$1"
+    assert_has_parameters require_cmd "cmd"
+    command -v "${cmd}" &>/dev/null || throw "test_script/test.sh requires command '${cmd}'. Please install it."
+}
+
+# Sets the length of a string by truncating or padding it with spaces
+# Usage: set_string_length <string> <length>
+# Parameters:
+#   $1: The string to set the length of
+#   $2: The desired length of the string
 function set_string_length {
     local string="$1"
     local length="$2"
@@ -91,9 +106,7 @@ function try_silent {
         echo "################################################################################"
     } > "${tmp_file}"
 
-    # unbuffer: Tell the program to print its output as if it wasn't piped. Usually, programs disable colouring when
-    # piped, but we want to keep it, since we are showing the output in the terminal.
-    unbuffer "$@" 2>&1 | handle_output "${tmp_file}"
+    CARGO_TERM_COLOR=always "$@" 2>&1 | handle_output "${tmp_file}"
 
     # Check if the command failed. Other means of checking the result would instead check the result of handle_output
     if [[ ${PIPESTATUS[0]} -ne 0 ]]; then

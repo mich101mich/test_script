@@ -4,6 +4,13 @@ start_time=$(date +%s)
 
 source "$(realpath "$(dirname "$0")")/test_functions.sh"
 
+# Check for required commands
+# Note that we don't check for coreutils commands, since without those we wouldn't even have echo etc., so the check
+# and error reporting would be ungodly.
+for cmd in rustup cargo tput git cmp; do
+    require_cmd "${cmd}"
+done
+
 # Check if all required parameter variables are set
 # Can't use a loop here because shellcheck needs to know about this too
 
