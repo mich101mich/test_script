@@ -164,24 +164,52 @@ function create_and_cd_test_dir {
 # Procedural macro specific functions
 ##########
 
-# Asserts that a directory has no git changes. If there are changes, the script will exit.
-# Usage: assert_no_change <directory>
+# Asserts that a directory has no git changes. If there are changes, the script will ask the user to resolve them and exit if they don't.
+# Usage: assert_no_change <directory> [<is_nightly>]
 # Parameters:
 #   $1: The directory to check for changes
+#   $2: Whether this is a nightly run. Defaults to no
+# Returns: 1 if there were changes, 0 otherwise
 function assert_no_change {
-    local dir="$1"
-    assert_has_parameters assert_no_change "dir"
+    local dir="$1" is_nightly="$2"
+    assert_has_parameters assert_no_change "dir" # Nightly is optional
 
     error=0
     while IFS= read -r -d $'\0' file; do
         [[ $file != *.stderr ]] && continue # Ignore non-stderr files
-        echo_err "Unstaged change in ${file} detected"
+
         error=1
+
+        if [[ ! $is_nightly || $file == */nightly/* ]]; then
+            echo_err "Unstaged change in ${file} detected"
+            continue # Not the nightly run or already in nightly folder, so just print error
+        fi
+
+        echo_err "File ${file} changed by nightly tests, splitting into stable/nightly variants"
+
+        # This file was changed by nightly but not by stable (since we asserted no changes after stable)
+        # So we need to split it into stable/nightly variants
+        local base_dir filename
+        base_dir="$(dirname "${file}")"
+        filename="$(basename "${file}")"
+
+        # Create stable/nightly folders if they don't exist
+        mkdir -p "${base_dir}/stable" "${base_dir}/nightly"
+
+        # Copy .rs file to stable and nightly
+        local rs_file="${file%.stderr}.rs"
+        cp "${rs_file}" "${base_dir}/stable/"
+        mv "${rs_file}" "${base_dir}/nightly/"
+
+        # Copy stderr files to their respective folders, adjusting paths
+        sed -e "s|${base_dir}/|${base_dir}/nightly/|g" "${file}" > "${base_dir}/nightly/${filename}"
+        git checkout -- "${file}" # Get the original stderr file for stable
+        sed -e "s|${base_dir}/|${base_dir}/stable/|g" "${file}" > "${base_dir}/stable/${filename}"
+        rm "${file}"
     done < <(git ls-files --exclude-standard --modified --others -z -- "${dir}")
 
-    if [[ ${error} -ne 0 ]]; then
-        exit 1
-    fi
+    [[ ${error} -eq 0 ]] || return 1
+    return 0
 }
 
 function compare_files {
@@ -201,16 +229,10 @@ function compare_files {
     fi
 }
 
-# Runs the error message tests
-# Usage: run_error_message_tests <fail_dir> [<overwrite>]
-# Parameters:
-#   $1: The directory containing the error message tests
-#   $2: If 1, the tests will be run in overwrite mode. Defaults to 0
-function run_error_message_tests {
+# Internal function. See run_error_message_tests for details.
+function _internal_run_error_message_tests {
     local fail_dir="$1"
-    local overwrite="${2:-0}"
-    assert_has_parameters run_error_message_tests "fail_dir"
-
+    local overwrite="$2"
     local error=0
 
     # Check that stable and nightly fail tests are the same
@@ -245,9 +267,7 @@ function run_error_message_tests {
         done < <(find "${nightly_dir}" -type f -name '*.rs' -print0)
     done < <(find "${fail_dir}" -type d -name nightly -print0)
 
-    if [[ ${error} -eq 1 ]]; then
-        exit 1
-    fi
+    [[ ${error} -eq 0 ]] || return 1
 
     # Run the tests
     if [[ ${overwrite} -eq 1 ]]; then
@@ -256,53 +276,18 @@ function run_error_message_tests {
 
         # "overwrite" will (as the name implies) overwrite any incorrect output files in the error_message_tests.
         # First verify that there are no previous changes
-        assert_no_change "${fail_dir}"
+
+        assert_no_change "${fail_dir}" || return 1
 
         # Run stable tests
         try_silent cargo +stable test error_message_tests -- --ignored
-        # Verify that no overwrites were made by stable tests
-        assert_no_change "${fail_dir}"
+
+        assert_no_change "${fail_dir}" || return 1
 
         # Run nightly tests
         try_silent cargo +nightly test error_message_tests -- --ignored
 
-        # Record which files were changed by nightly tests
-        while IFS= read -r -d $'\0' file; do
-            [[ $file != *.stderr ]] && continue # Ignore non-stderr files
-
-            error=1
-
-            if [[ $file == */nightly/* ]]; then
-                echo_err "Unstaged change in ${file} detected"
-                continue # Already in nightly folder, so just print error
-            fi
-
-            echo_err "File ${file} changed by nightly tests, splitting into stable/nightly variants"
-
-            # This file was changed by nightly but not by stable (since we asserted no changes after stable)
-            # So we need to split it into stable/nightly variants
-            local base_dir filename
-            base_dir="$(dirname "${file}")"
-            filename="$(basename "${file}")"
-
-            # Create stable/nightly folders if they don't exist
-            mkdir -p "${base_dir}/stable" "${base_dir}/nightly"
-
-            # Copy .rs file to stable and nightly
-            local rs_file="${file%.stderr}.rs"
-            cp "${rs_file}" "${base_dir}/stable/"
-            mv "${rs_file}" "${base_dir}/nightly/"
-
-            # Copy stderr files to their respective folders, adjusting paths
-            sed -e "s|${base_dir}/|${base_dir}/nightly/|g" "${file}" > "${base_dir}/nightly/${filename}"
-            git checkout -- "${file}" # Get the original stderr file for stable
-            sed -e "s|${base_dir}/|${base_dir}/stable/|g" "${file}" > "${base_dir}/stable/${filename}"
-            rm "${file}"
-        done < <(git ls-files --modified -z -- "${fail_dir}")
-
-        if [[ ${error} -eq 1 ]]; then
-            exit 1
-        fi
+        assert_no_change "${fail_dir}" "nightly" || return 1
     else
         unset TRYBUILD # Remove TRYBUILD flag if it was set
         try_silent cargo +stable test error_message_tests -- --ignored
@@ -341,7 +326,27 @@ function run_error_message_tests {
         done
     done
 
-    if [[ ${error} -eq 1 ]]; then
-        exit 1
-    fi
+    [[ ${error} -eq 0 ]] || return 1
+    return 0
+}
+
+# Runs the error message tests
+# Usage: run_error_message_tests <fail_dir> [<overwrite>]
+# Parameters:
+#   $1: The directory containing the error message tests
+#   $2: If 1, the tests will be run in overwrite mode. Defaults to 0
+function run_error_message_tests {
+    local fail_dir="$1"
+    local overwrite="${2:-0}"
+    assert_has_parameters run_error_message_tests "fail_dir"
+
+    while ! _internal_run_error_message_tests "${fail_dir}" "${overwrite}"; do
+        read -r -p "Retry error message tests? [Y/n] " response
+        if [[ "$response" == "n" || "$response" == "N" ]]; then
+            exit 1
+        fi
+
+        echo "Retrying..."
+        echo ""
+    done
 }

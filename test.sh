@@ -80,7 +80,7 @@ cd "${base_dir}"
 
 if [[ "${is_proc_macro}" -eq 1 ]]; then
     echo "Error Message Tests"
-    run_error_message_tests "${base_dir}/tests/fail" "${overwrite}"
+    run_error_message_tests "tests/fail" "${overwrite}"
 fi
 
 ########
