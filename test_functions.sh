@@ -95,7 +95,7 @@ function handle_output {
 function try_silent {
     echo "    Running $*"
 
-    local tmp_file="${CARGO_TARGET_DIR:?}/test.log"
+    local tmp_file="${TRY_SILENT_LOG_FILE:?}"
     mkdir -p "$(dirname "${tmp_file}")"
     {
         echo "################################################################################"
@@ -158,6 +158,7 @@ function create_and_cd_test_dir {
     done
 
     cd "${target_dir}"
+    export CARGO_TARGET_DIR="${target_dir}/target"
 }
 
 ##########

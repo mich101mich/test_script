@@ -49,10 +49,16 @@ fi
 
 export RUSTFLAGS="-D warnings"
 export RUSTDOCFLAGS="-D warnings"
-export CARGO_TARGET_DIR="${base_dir}/target"
-mkdir -p "${CARGO_TARGET_DIR}"
+mkdir -p "${base_dir}/target"
+
+export TRY_SILENT_LOG_FILE="${base_dir}/target/test.log"
 
 try_silent rustup update
+try_silent rustup install stable
+try_silent rustup install nightly
+try_silent rustup component add --toolchain stable rustfmt llvm-tools-preview
+try_silent rustup component add --toolchain nightly clippy llvm-tools-preview
+try_silent cargo install cargo-llvm-cov
 
 ########
 # main tests
@@ -65,21 +71,25 @@ for relative_dir in "" "${sub_directories[@]}"; do
     fi
     cd "${base_dir}/${relative_dir}"
 
-    export CARGO_TARGET_DIR="${base_dir}/target/${relative_dir}" # Have all compile output in the root target directory
+    sub_output_dir="${relative_dir}"
+    [[ -z "${sub_output_dir}" ]] && sub_output_dir="base"
+
+    export CARGO_TARGET_DIR="${base_dir}/target/${sub_output_dir}"
+    mkdir -p "${base_dir}/target/coverage/${sub_output_dir}"
 
     try_silent cargo update
     try_silent cargo +stable test
-    try_silent cargo +nightly test
+    try_silent cargo +nightly llvm-cov test --lcov --output-path "${base_dir}/target/coverage/${sub_output_dir}/lcov.info"
     try_silent cargo +nightly doc --no-deps
     try_silent cargo +nightly clippy -- -D warnings
     try_silent cargo +stable fmt --check
 done
-export CARGO_TARGET_DIR="${base_dir}/target"
 
 cd "${base_dir}"
 
 if [[ "${is_proc_macro}" -eq 1 ]]; then
     echo "Error Message Tests"
+    export CARGO_TARGET_DIR="${base_dir}/target/error_messages"
     run_error_message_tests "tests/fail" "${overwrite}"
 fi
 
