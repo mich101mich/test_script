@@ -75,11 +75,12 @@ for relative_dir in "" "${sub_directories[@]}"; do
     [[ -z "${sub_output_dir}" ]] && sub_output_dir="base"
 
     export CARGO_TARGET_DIR="${base_dir}/target/${sub_output_dir}"
-    mkdir -p "${base_dir}/target/coverage/${sub_output_dir}"
+    coverage_dir="${base_dir}/target/coverage/${sub_output_dir}"
+    mkdir -p "${coverage_dir}"
 
     try_silent cargo update
     try_silent cargo +stable test
-    try_silent cargo +nightly llvm-cov test --lcov --output-path "${base_dir}/target/coverage/${sub_output_dir}/lcov.info"
+    try_silent cargo +nightly llvm-cov test --lcov --output-path "${coverage_dir}/lcov.info"
     try_silent cargo +nightly doc --no-deps
     try_silent cargo +nightly clippy -- -D warnings
     try_silent cargo +stable fmt --check
@@ -90,7 +91,7 @@ cd "${base_dir}"
 if [[ "${is_proc_macro}" -eq 1 ]]; then
     echo "Error Message Tests"
     export CARGO_TARGET_DIR="${base_dir}/target/error_messages"
-    run_error_message_tests "tests/fail" "${overwrite}"
+    run_error_message_tests "tests/fail" "${base_dir}/target/coverage/error_messages" "${overwrite}"
 fi
 
 ########

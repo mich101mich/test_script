@@ -233,7 +233,8 @@ function compare_files {
 # Internal function. See run_error_message_tests for details.
 function _internal_run_error_message_tests {
     local fail_dir="$1"
-    local overwrite="$2"
+    local coverage_out_dir="$2"
+    local overwrite="$3"
     local error=0
 
     # Check that stable and nightly fail tests are the same
@@ -270,6 +271,8 @@ function _internal_run_error_message_tests {
 
     [[ ${error} -eq 0 ]] || return 1
 
+    mkdir -p "${coverage_out_dir}"/{stable,nightly}
+
     # Run the tests
     if [[ ${overwrite} -eq 1 ]]; then
         echo "    Trybuild overwrite mode enabled"
@@ -281,18 +284,18 @@ function _internal_run_error_message_tests {
         assert_no_change "${fail_dir}" || return 1
 
         # Run stable tests
-        try_silent cargo +stable test error_message_tests -- --ignored || exit 1
+        try_silent cargo +stable llvm-cov test error_message_tests --lcov --output-path "${coverage_out_dir}/stable/lcov.info" -- --ignored || exit 1
 
         assert_no_change "${fail_dir}" || return 1
 
         # Run nightly tests
-        try_silent cargo +nightly test error_message_tests -- --ignored || exit 1
+        try_silent cargo +nightly llvm-cov test error_message_tests --lcov --output-path "${coverage_out_dir}/nightly/lcov.info" -- --ignored || exit 1
 
         assert_no_change "${fail_dir}" "nightly" || return 1
     else
         unset TRYBUILD # Remove TRYBUILD flag if it was set
-        try_silent cargo +stable test error_message_tests -- --ignored || exit 1
-        try_silent cargo +nightly test error_message_tests -- --ignored || exit 1
+        try_silent cargo +stable llvm-cov test error_message_tests --lcov --output-path "${coverage_out_dir}/stable/lcov.info" -- --ignored || exit 1
+        try_silent cargo +nightly llvm-cov test error_message_tests --lcov --output-path "${coverage_out_dir}/nightly/lcov.info" -- --ignored || exit 1
     fi
 
     # Check that the stable and nightly distinction is actually used
@@ -338,10 +341,11 @@ function _internal_run_error_message_tests {
 #   $2: If 1, the tests will be run in overwrite mode. Defaults to 0
 function run_error_message_tests {
     local fail_dir="$1"
-    local overwrite="${2:-0}"
-    assert_has_parameters run_error_message_tests "fail_dir"
+    local coverage_out_dir="$2"
+    local overwrite="${3:-0}"
+    assert_has_parameters run_error_message_tests "fail_dir" "coverage_out_dir"
 
-    while ! _internal_run_error_message_tests "${fail_dir}" "${overwrite}"; do
+    while ! _internal_run_error_message_tests "${fail_dir}" "${coverage_out_dir}" "${overwrite}"; do
         read -r -p "Retry error message tests? [Y/n] " response
         if [[ "$response" == "n" || "$response" == "N" ]]; then
             exit 1
