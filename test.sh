@@ -16,19 +16,7 @@ done
 
 # The base directory of the crate
 [[ -v base_dir ]] || throw "test.sh parameter variable base_dir is not set"
-# Optional: An array of subdirectories of the crate. Defaults to an empty array
-if [[ -v sub_directories ]]; then
-    read -r -a sub_directories <<<"${sub_directories}" # Split the string into an array
-    for sub_directory in "${sub_directories[@]}"; do
-        if [[ ! -d "${base_dir}/${sub_directory}" ]]; then
-            throw "Subdirectory ${sub_directory} does not exist"
-        elif [[ ! -f "${base_dir}/${sub_directory}/Cargo.toml" ]]; then
-            throw "Subdirectory ${sub_directory} does not contain a Cargo.toml file"
-        fi
-    done
-else
-    sub_directories=()
-fi
+
 # Optional: Overrides for dependencies in MSRV builds
 [[ -v msrv_overrides ]] || msrv_overrides=""
 
@@ -51,6 +39,9 @@ export RUSTFLAGS="-D warnings"
 export RUSTDOCFLAGS="-D warnings"
 mkdir -p "${base_dir}/target"
 
+export COVERAGE_DIR="${base_dir}/target/coverage"
+mkdir -p "${COVERAGE_DIR}"/{stable,nightly}
+
 export TRY_SILENT_LOG_FILE="${base_dir}/target/test.log"
 
 try_silent rustup update
@@ -63,35 +54,22 @@ try_silent cargo install cargo-llvm-cov
 ########
 # main tests
 ########
-for relative_dir in "" "${sub_directories[@]}"; do
-    if [[ "$relative_dir" == "" ]]; then
-        echo "Base Tests"
-    else
-        echo "Subdirectory Tests: ${relative_dir}"
-    fi
-    cd "${base_dir}/${relative_dir}"
+echo "Base Tests"
+export CARGO_TARGET_DIR="${base_dir}/target"
 
-    sub_output_dir="${relative_dir}"
-    [[ -z "${sub_output_dir}" ]] && sub_output_dir="base"
-
-    export CARGO_TARGET_DIR="${base_dir}/target/${sub_output_dir}"
-    coverage_dir="${base_dir}/target/coverage/${sub_output_dir}"
-    mkdir -p "${coverage_dir}"
-
-    try_silent cargo update
-    try_silent cargo +stable test
-    try_silent cargo +nightly llvm-cov test --lcov --output-path "${coverage_dir}/lcov.info"
-    try_silent cargo +nightly doc --no-deps
-    try_silent cargo +nightly clippy -- -D warnings
-    try_silent cargo +stable fmt --check
-done
+try_silent cargo update --workspace
+try_silent cargo +stable llvm-cov test --workspace --lcov --output-path "${COVERAGE_DIR}/stable/lcov.info"
+try_silent cargo +nightly llvm-cov test --workspace --lcov --output-path "${COVERAGE_DIR}/nightly/lcov.info"
+try_silent cargo +nightly doc --no-deps --workspace
+try_silent cargo +nightly clippy --workspace -- -D warnings
+try_silent cargo +stable fmt --check --all # Note: I'm expecting --all to be renamed to --workspace in the future
 
 cd "${base_dir}"
 
 if [[ "${is_proc_macro}" -eq 1 ]]; then
     echo "Error Message Tests"
     export CARGO_TARGET_DIR="${base_dir}/target/error_messages"
-    run_error_message_tests "tests/fail" "${base_dir}/target/coverage/error_messages" "${overwrite}"
+    run_error_message_tests "tests/fail" "${overwrite}"
 fi
 
 ########
@@ -102,32 +80,25 @@ echo "Minimum Supported Rust Version Tests"
 MSRV=$(read_msrv "${base_dir}/Cargo.toml")
 echo "    Minimum supported Rust version: ${MSRV}"
 
-for sub_directory in "${sub_directories[@]}"; do
-    sub_msrv=$(read_msrv "${base_dir}/${sub_directory}/Cargo.toml")
-    if [[ "$sub_msrv" != "$MSRV" ]]; then
-        throw "Subdirectory ${sub_directory} has a different MSRV (${sub_msrv}) than the base directory (${MSRV})"
-    fi
-done
-
-create_and_cd_test_dir "${base_dir}" "msrv_${MSRV}" "${sub_directories[@]}"
+create_and_cd_test_dir "${base_dir}" "msrv_${MSRV}"
 
 try_silent rustup install "${MSRV}"
-try_silent cargo "+${MSRV}" update
+try_silent cargo "+${MSRV}" update --workspace
 for override in ${msrv_overrides}; do
     try_silent cargo "+${MSRV}" update -p "${override%@*}" --precise "${override#*@}"
 done
-try_silent cargo "+${MSRV}" test
+try_silent cargo "+${MSRV}" test --workspace
 
 ########
 # minimal versions
 ########
 echo "Minimal Versions Tests"
 
-create_and_cd_test_dir "${base_dir}" "min_versions" "${sub_directories[@]}"
-try_silent cargo +nightly -Z minimal-versions update
+create_and_cd_test_dir "${base_dir}" "min_versions"
+try_silent cargo +nightly -Z minimal-versions update --workspace
 
-try_silent cargo +stable test
-try_silent cargo +nightly test
+try_silent cargo +stable test --workspace
+try_silent cargo +nightly test --workspace
 
 ########
 end_time=$(date +%s)

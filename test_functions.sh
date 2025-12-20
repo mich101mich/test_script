@@ -137,25 +137,24 @@ function read_msrv {
 # Parameters:
 #   $1: The base directory to take the test files from
 #   $2: The name of the test directory to create
-#   $3..n: Additional files or directories from base_dir that should be symlink-copied to the test directory.
-#          Without this, only "Cargo.toml", "src", and "tests" will be symlinked
 function create_and_cd_test_dir {
     local base_dir="$1"
     local out_dir_name="$2"
     assert_has_parameters create_and_cd_test_dir "base_dir" "out_dir_name"
 
-    shift 2
-    local files=("Cargo.toml" "src" "tests" "$@")
-
     local target_dir="${base_dir}/target/${out_dir_name}"
     mkdir -p "${target_dir}"
 
-    for file in "${files[@]}"; do
-        local out_file="${target_dir}/${file}"
-        rm -rf "${out_file}" # Remove any existing files
-        mkdir -p "$(dirname "${out_file}")" # Allowing for nested directories
-        ln -s "../../${file}" "${out_file}"
-    done
+    local out_file
+    while IFS= read -r -d $'\0' file; do
+        out_file="$(basename "${file}")"
+        if [[ "${out_file}" == "target" ]]; then
+            continue # Don't copy target directories
+        fi
+        out_file="${target_dir}/${out_file}"
+        rm -f "${out_file}" # Remove any existing files
+        ln -s "${file}" "${out_file}"
+    done < <(find "${base_dir}" -maxdepth 1 -print0)
 
     cd "${target_dir}"
     export CARGO_TARGET_DIR="${target_dir}/target"
@@ -233,8 +232,7 @@ function compare_files {
 # Internal function. See run_error_message_tests for details.
 function _internal_run_error_message_tests {
     local fail_dir="$1"
-    local coverage_out_dir="$2"
-    local overwrite="$3"
+    local overwrite="$2"
     local error=0
 
     # Check that stable and nightly fail tests are the same
@@ -271,7 +269,7 @@ function _internal_run_error_message_tests {
 
     [[ ${error} -eq 0 ]] || return 1
 
-    mkdir -p "${coverage_out_dir}"/{stable,nightly}
+    mkdir -p "${COVERAGE_DIR:?}"/{error_messages_stable,error_messages_nightly}
 
     # Run the tests
     if [[ ${overwrite} -eq 1 ]]; then
@@ -284,18 +282,18 @@ function _internal_run_error_message_tests {
         assert_no_change "${fail_dir}" || return 1
 
         # Run stable tests
-        try_silent cargo +stable llvm-cov test error_message_tests --lcov --output-path "${coverage_out_dir}/stable/lcov.info" -- --ignored || exit 1
+        try_silent cargo +stable llvm-cov test error_message_tests --workspace --lcov --output-path "${COVERAGE_DIR}/error_messages_stable/lcov.info" -- --ignored || exit 1
 
         assert_no_change "${fail_dir}" || return 1
 
         # Run nightly tests
-        try_silent cargo +nightly llvm-cov test error_message_tests --lcov --output-path "${coverage_out_dir}/nightly/lcov.info" -- --ignored || exit 1
+        try_silent cargo +nightly llvm-cov test error_message_tests --workspace --lcov --output-path "${COVERAGE_DIR}/error_messages_nightly/lcov.info" -- --ignored || exit 1
 
         assert_no_change "${fail_dir}" "nightly" || return 1
     else
         unset TRYBUILD # Remove TRYBUILD flag if it was set
-        try_silent cargo +stable llvm-cov test error_message_tests --lcov --output-path "${coverage_out_dir}/stable/lcov.info" -- --ignored || exit 1
-        try_silent cargo +nightly llvm-cov test error_message_tests --lcov --output-path "${coverage_out_dir}/nightly/lcov.info" -- --ignored || exit 1
+        try_silent cargo +stable llvm-cov test error_message_tests --workspace --lcov --output-path "${COVERAGE_DIR}/error_messages_stable/lcov.info" -- --ignored || exit 1
+        try_silent cargo +nightly llvm-cov test error_message_tests --workspace --lcov --output-path "${COVERAGE_DIR}/error_messages_nightly/lcov.info" -- --ignored || exit 1
     fi
 
     # Check that the stable and nightly distinction is actually used
@@ -341,11 +339,10 @@ function _internal_run_error_message_tests {
 #   $2: If 1, the tests will be run in overwrite mode. Defaults to 0
 function run_error_message_tests {
     local fail_dir="$1"
-    local coverage_out_dir="$2"
-    local overwrite="${3:-0}"
-    assert_has_parameters run_error_message_tests "fail_dir" "coverage_out_dir"
+    local overwrite="${2:-0}"
+    assert_has_parameters run_error_message_tests "fail_dir"
 
-    while ! _internal_run_error_message_tests "${fail_dir}" "${coverage_out_dir}" "${overwrite}"; do
+    while ! _internal_run_error_message_tests "${fail_dir}" "${overwrite}"; do
         read -r -p "Retry error message tests? [Y/n] " response
         if [[ "$response" == "n" || "$response" == "N" ]]; then
             exit 1
