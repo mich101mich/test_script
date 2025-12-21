@@ -35,12 +35,11 @@ elif [[ -n "$1" ]]; then
     throw "Usage: $0 [overwrite]"
 fi
 
+cd "${base_dir}"
+
 export RUSTFLAGS="-D warnings"
 export RUSTDOCFLAGS="-D warnings"
-mkdir -p "${base_dir}/target"
-
-export COVERAGE_DIR="${base_dir}/target/coverage"
-mkdir -p "${COVERAGE_DIR}"/{stable,nightly}
+mkdir -p target/cov/{stable,nightly}
 
 export TRY_SILENT_LOG_FILE="${base_dir}/target/test.log"
 
@@ -58,17 +57,14 @@ echo "Base Tests"
 export CARGO_TARGET_DIR="${base_dir}/target"
 
 try_silent cargo update --workspace
-try_silent cargo +stable llvm-cov test --workspace --lcov --output-path "${COVERAGE_DIR}/stable/lcov.info"
-try_silent cargo +nightly llvm-cov test --workspace --lcov --output-path "${COVERAGE_DIR}/nightly/lcov.info"
+try_silent cargo +stable llvm-cov test --workspace --no-clean --lcov --output-path target/cov/stable/lcov.info
+try_silent cargo +nightly llvm-cov test --workspace --no-clean --lcov --output-path target/cov/nightly/lcov.info
 try_silent cargo +nightly doc --no-deps --workspace
 try_silent cargo +nightly clippy --workspace -- -D warnings
 try_silent cargo +stable fmt --check --all # Note: I'm expecting --all to be renamed to --workspace in the future
 
-cd "${base_dir}"
-
 if [[ "${is_proc_macro}" -eq 1 ]]; then
     echo "Error Message Tests"
-    export CARGO_TARGET_DIR="${base_dir}/target/error_messages"
     run_error_message_tests "tests/fail" "${overwrite}"
 fi
 
@@ -95,7 +91,7 @@ try_silent cargo "+${MSRV}" test --workspace
 echo "Minimal Versions Tests"
 
 create_and_cd_test_dir "${base_dir}" "min_versions"
-try_silent cargo +nightly -Z minimal-versions update --workspace
+try_silent cargo +nightly -Z minimal-versions update
 
 try_silent cargo +stable test --workspace
 try_silent cargo +nightly test --workspace
