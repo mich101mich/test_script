@@ -46,8 +46,10 @@ export TRY_SILENT_LOG_FILE="${base_dir}/target/test.log"
 try_silent rustup update
 try_silent rustup install stable
 try_silent rustup install nightly
-try_silent rustup component add --toolchain stable rustfmt llvm-tools-preview
-try_silent rustup component add --toolchain nightly clippy llvm-tools-preview
+# Tools: We run fmt on stable, clippy on nightly, llvm-cov on both.
+#        rust-src is required because compiler errors change with it, and we want consistent errors.
+try_silent rustup component add --toolchain stable rustfmt rust-src llvm-tools-preview
+try_silent rustup component add --toolchain nightly clippy rust-src llvm-tools-preview
 try_silent cargo install cargo-llvm-cov
 
 ########
