@@ -282,18 +282,18 @@ function _internal_run_error_message_tests {
         assert_no_change "${fail_dir}" || return 1
 
         # Run stable tests
-        try_silent cargo +stable llvm-cov test error_message_tests --workspace --no-clean --lcov --output-path target/cov/err_stable/lcov.info -- --ignored || exit 1
+        try_silent cargo +stable llvm-cov test error_message_tests --workspace --lcov --output-path target/cov/err_stable/lcov.info -- --ignored || exit 1
 
         assert_no_change "${fail_dir}" || return 1
 
         # Run nightly tests
-        try_silent cargo +nightly llvm-cov test error_message_tests --workspace --no-clean --lcov --output-path target/cov/err_nightly/lcov.info -- --ignored || exit 1
+        try_silent cargo +nightly llvm-cov test error_message_tests --workspace --lcov --output-path target/cov/err_nightly/lcov.info -- --ignored || exit 1
 
         assert_no_change "${fail_dir}" "nightly" || return 1
     else
         unset TRYBUILD # Remove TRYBUILD flag if it was set
-        try_silent cargo +stable llvm-cov test error_message_tests --workspace --no-clean --lcov --output-path target/cov/err_stable/lcov.info -- --ignored || exit 1
-        try_silent cargo +nightly llvm-cov test error_message_tests --workspace --no-clean --lcov --output-path target/cov/err_nightly/lcov.info -- --ignored || exit 1
+        try_silent cargo +stable llvm-cov test error_message_tests --workspace --lcov --output-path target/cov/err_stable/lcov.info -- --ignored || exit 1
+        try_silent cargo +nightly llvm-cov test error_message_tests --workspace --lcov --output-path target/cov/err_nightly/lcov.info -- --ignored || exit 1
     fi
 
     # Check that the stable and nightly distinction is actually used

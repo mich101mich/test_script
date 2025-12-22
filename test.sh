@@ -57,8 +57,8 @@ echo "Base Tests"
 export CARGO_TARGET_DIR="${base_dir}/target"
 
 try_silent cargo update --workspace
-try_silent cargo +stable llvm-cov test --workspace --no-clean --lcov --output-path target/cov/stable/lcov.info
-try_silent cargo +nightly llvm-cov test --workspace --no-clean --lcov --output-path target/cov/nightly/lcov.info
+try_silent cargo +stable llvm-cov test --workspace --lcov --output-path target/cov/stable/lcov.info
+try_silent cargo +nightly llvm-cov test --workspace --lcov --output-path target/cov/nightly/lcov.info
 try_silent cargo +nightly doc --no-deps --workspace
 try_silent cargo +nightly clippy --workspace -- -D warnings
 try_silent cargo +stable fmt --check --all # Note: I'm expecting --all to be renamed to --workspace in the future
