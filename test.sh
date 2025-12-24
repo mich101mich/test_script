@@ -39,7 +39,7 @@ cd "${base_dir}"
 
 export RUSTFLAGS="-D warnings"
 export RUSTDOCFLAGS="-D warnings"
-mkdir -p target/cov/{stable,nightly}
+mkdir -p target/cov/nightly
 
 export TRY_SILENT_LOG_FILE="${base_dir}/target/test.log"
 
@@ -59,7 +59,7 @@ echo "Base Tests"
 export CARGO_TARGET_DIR="${base_dir}/target"
 
 try_silent cargo update --workspace
-try_silent cargo +stable llvm-cov test --workspace --lcov --output-path target/cov/stable/lcov.info
+try_silent cargo +stable test --workspace
 try_silent cargo +nightly llvm-cov test --workspace --lcov --output-path target/cov/nightly/lcov.info
 try_silent cargo +nightly doc --no-deps --workspace
 try_silent cargo +nightly clippy --workspace -- -D warnings
