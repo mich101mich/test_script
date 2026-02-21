@@ -58,7 +58,7 @@ try_silent cargo install cargo-llvm-cov
 echo "Base Tests"
 export CARGO_TARGET_DIR="${base_dir}/target"
 
-try_silent cargo update --workspace
+try_silent cargo update
 try_silent cargo +stable test --workspace
 try_silent cargo +nightly llvm-cov test --workspace --lcov --output-path target/cov/nightly/lcov.info
 try_silent cargo +nightly doc --no-deps --workspace
@@ -81,7 +81,7 @@ echo "    Minimum supported Rust version: ${MSRV}"
 create_and_cd_test_dir "${base_dir}" "msrv_${MSRV}"
 
 try_silent rustup install "${MSRV}"
-try_silent cargo "+${MSRV}" update --workspace
+try_silent cargo "+${MSRV}" update
 for override in ${msrv_overrides}; do
     try_silent cargo "+${MSRV}" update -p "${override%@*}" --precise "${override#*@}"
 done
