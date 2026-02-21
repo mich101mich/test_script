@@ -28,11 +28,11 @@ done
 ########
 echo "Setup"
 
-overwrite=0
-if [[ "$1" == "overwrite" ]]; then
-    overwrite=1
+frozen=0
+if [[ "$1" == "frozen" ]]; then
+    frozen=1
 elif [[ -n "$1" ]]; then
-    throw "Usage: $0 [overwrite]"
+    throw "Usage: $0 [frozen]"
 fi
 
 cd "${base_dir}"
@@ -67,7 +67,7 @@ try_silent cargo +stable fmt --check --all # Note: I'm expecting --all to be ren
 
 if [[ "${is_proc_macro}" -eq 1 ]]; then
     echo "Error Message Tests"
-    run_error_message_tests "tests/fail" "${overwrite}"
+    run_error_message_tests "${frozen}"
 fi
 
 ########

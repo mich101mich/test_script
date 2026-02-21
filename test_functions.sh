@@ -176,7 +176,7 @@ function assert_no_change {
 
     error=0
     while IFS= read -r -d $'\0' file; do
-        [[ $file != *.stderr ]] && continue # Ignore non-stderr files
+        [[ $file != *.rs ]] && continue # Ignore non-test files
 
         error=1
 
@@ -196,153 +196,88 @@ function assert_no_change {
         # Create stable/nightly folders if they don't exist
         mkdir -p "${base_dir}/stable" "${base_dir}/nightly"
 
-        # Copy .rs file to stable and nightly
-        local rs_file="${file%.stderr}.rs"
-        cp "${rs_file}" "${base_dir}/stable/"
-        mv "${rs_file}" "${base_dir}/nightly/"
-
-        # Copy stderr files to their respective folders, adjusting paths
-        sed -e "s|${base_dir}/|${base_dir}/nightly/|g" "${file}" > "${base_dir}/nightly/${filename}"
-        git checkout -- "${file}" # Get the original stderr file for stable
-        sed -e "s|${base_dir}/|${base_dir}/stable/|g" "${file}" > "${base_dir}/stable/${filename}"
-        rm "${file}"
+        # The file used to be valid for stable, and was now modified to fit nightly, so we already have both versions.
+        cp "${file}" "${base_dir}/nightly/${filename}"
+        checkout -- "${file}" # Get the original file back for stable
+        mv "${file}" "${base_dir}/stable/${filename}"
     done < <(git ls-files --exclude-standard --modified --others -z -- "${dir}")
 
     [[ ${error} -eq 0 ]] || return 1
     return 0
 }
 
-function compare_files {
-    local a="$1"
-    local b="$2"
-    assert_has_parameters compare_files "a" "b"
-
-    if [[ ! -f "${a}" ]]; then
-        echo_err "File ${a} missing"
-        return 1
-    elif [[ ! -f "${b}" ]]; then
-        echo_err "File ${b} missing"
-        return 1
-    elif ! cmp -s "${a}" "${b}"; then
-        echo_err "File ${a} and ${b} differ"
-        return 1
-    fi
-}
-
 # Internal function. See run_error_message_tests for details.
 function _internal_run_error_message_tests {
-    local fail_dir="$1"
-    local overwrite="$2"
+    local frozen="$1"
     local error=0
-
-    # Check that stable and nightly fail tests are the same
-    local stable_dirs=()
-    local test_files=()
-    while IFS= read -r -d $'\0' stable_dir; do
-        local nightly_dir="${stable_dir%/stable}/nightly"
-        if [[ ! -d "${nightly_dir}" ]]; then
-            echo_err "No nightly directory for ${stable_dir}"
-            error=1
-            continue
-        fi
-        stable_dirs+=("${stable_dir}")
-
-        while IFS= read -r -d $'\0' file; do
-            relative_file="${file#"${stable_dir}"/}"
-            compare_files "${stable_dir}/${relative_file}" "${nightly_dir}/${relative_file}" || error=1
-            test_files+=("${relative_file}")
-        done < <(find "${stable_dir}" -type f -name '*.rs' -print0)
-    done < <(find "${fail_dir}" -type d -name stable -print0)
-
-    while IFS= read -r -d $'\0' nightly_dir; do
-        stable_dir="${nightly_dir%/nightly}/stable"
-        if [[ ! -d "${stable_dir}" ]]; then
-            echo_err "No stable directory for ${nightly_dir}"
-            error=1
-            continue
-        fi
-        while IFS= read -r -d $'\0' file; do
-            relative_file="${file#"${nightly_dir}"/}"
-            compare_files "${nightly_dir}/${relative_file}" "${stable_dir}/${relative_file}" || error=1
-        done < <(find "${nightly_dir}" -type f -name '*.rs' -print0)
-    done < <(find "${fail_dir}" -type d -name nightly -print0)
-
-    [[ ${error} -eq 0 ]] || return 1
 
     mkdir -p target/cov/{err_stable,err_nightly}
 
     # Run the tests
-    if [[ ${overwrite} -eq 1 ]]; then
-        echo "    Trybuild overwrite mode enabled"
-        export TRYBUILD=overwrite
-
-        # "overwrite" will (as the name implies) overwrite any incorrect output files in the error_message_tests.
-        # First verify that there are no previous changes
-
-        assert_no_change "${fail_dir}" || return 1
+    if [[ $frozen -eq 1 ]]; then
+        echo "    err_span_check frozen mode enabled"
+        export ERR_SPAN_CHECK="frozen"
+        try_silent cargo +stable llvm-cov test error_message_tests --workspace --lcov --output-path target/cov/err_stable/lcov.info -- --ignored || exit 1
+        try_silent cargo +nightly llvm-cov test error_message_tests --workspace --lcov --output-path target/cov/err_nightly/lcov.info -- --ignored || exit 1
+    else
+        assert_no_change "tests/fail" || return 1
 
         # Run stable tests
-        try_silent cargo +stable llvm-cov test error_message_tests --workspace --lcov --output-path target/cov/err_stable/lcov.info -- --ignored || exit 1
+        try_silent cargo +stable llvm-cov test error_message_tests --workspace --lcov --output-path target/cov/err_stable/lcov.info -- --ignored || return 1
 
-        assert_no_change "${fail_dir}" || return 1
+        assert_no_change "tests/fail" || return 1
 
         # Run nightly tests
-        try_silent cargo +nightly llvm-cov test error_message_tests --workspace --lcov --output-path target/cov/err_nightly/lcov.info -- --ignored || exit 1
+        try_silent cargo +nightly llvm-cov test error_message_tests --workspace --lcov --output-path target/cov/err_nightly/lcov.info -- --ignored || return 1
 
-        assert_no_change "${fail_dir}" "nightly" || return 1
-    else
-        unset TRYBUILD # Remove TRYBUILD flag if it was set
-        try_silent cargo +stable llvm-cov test error_message_tests --workspace --lcov --output-path target/cov/err_stable/lcov.info -- --ignored || exit 1
-        try_silent cargo +nightly llvm-cov test error_message_tests --workspace --lcov --output-path target/cov/err_nightly/lcov.info -- --ignored || exit 1
+        assert_no_change "tests/fail" "nightly" || return 1
     fi
 
     # Check that the stable and nightly distinction is actually used
-    for stable_dir in "${stable_dirs[@]}"; do
-        local base_dir="${stable_dir}/.."
+    while IFS= read -r -d $'\0' stable_dir; do
+        local base_dir="${stable_dir%/stable}"
         local nightly_dir="${base_dir}/nightly"
-        for file in "${test_files[@]}"; do
-            stderr_file="${file%.rs}.stderr"
-            if [[ ! -f "${stable_dir}/${stderr_file}" ]]; then
-                echo_err "File ${stderr_file} missing in ${stable_dir}"
-                error=1
-                continue
-            fi
-            if [[ ! -f "${nightly_dir}/${stderr_file}" ]]; then
-                echo_err "File ${stderr_file} missing in ${nightly_dir}"
-                error=1
-                continue
-            fi
-            # Compare the contents of the stderr files, but ignore the path differences between stable and nightly
-            if cmp -s "${stable_dir}/${stderr_file}" <(sed -e 's/nightly/stable/g' "${nightly_dir}/${stderr_file}"); then
-                if [[ ${overwrite} -eq 1 ]]; then
-                    echo_err "File ${stable_dir}/${stderr_file} is the same between stable and nightly, overwriting to unify"
-                    mv "${stable_dir}/${file}" "${base_dir}/${file}"
-                    sed -e 's|/stable/|/|g' "${stable_dir}/${stderr_file}" > "${base_dir}/${stderr_file}"
-                    rm "${stable_dir}/${stderr_file}" "${nightly_dir}/${file}" "${nightly_dir}/${stderr_file}"
-                else
-                    echo_err "File ${stable_dir}/${stderr_file} is the same between stable and nightly"
-                fi
 
-                error=1
+        while IFS= read -r -d $'\0' path; do
+            relative_path="${path#"${stable_dir}"/}"
+
+            cmp -s "${stable_dir}/${relative_path}" "${nightly_dir}/${relative_path}" || continue # Files are different, so they stay
+
+            error=1
+
+            if [[ $frozen -eq 1 ]]; then
+                echo_err "File ${stable_dir}/${relative_path} is the same between stable and nightly"
+            else
+                echo_err "File ${stable_dir}/${relative_path} is the same between stable and nightly, overwriting to unify"
+                mkdir -p "$(dirname "${base_dir}/${relative_path}")" # in case there are sub-folders within stable
+                mv "${stable_dir}/${relative_path}" "${base_dir}/${relative_path}"
+                rm "${nightly_dir}/${relative_path}"
             fi
-        done
-    done
+
+        done < <(find "${stable_dir}" -type f -name '*.rs' -print0)
+
+    done < <(find "tests/fail" -type d -name stable -print0)
 
     [[ ${error} -eq 0 ]] || return 1
     return 0
 }
 
 # Runs the error message tests
-# Usage: run_error_message_tests <fail_dir> [<overwrite>]
+# Usage: run_error_message_tests [<frozen>]
 # Parameters:
-#   $1: The directory containing the error message tests
-#   $2: If 1, the tests will be run in overwrite mode. Defaults to 0
+#   $1: If 1, the tests will be run in frozen mode. Defaults to 0
 function run_error_message_tests {
-    local fail_dir="$1"
-    local overwrite="${2:-0}"
-    assert_has_parameters run_error_message_tests "fail_dir"
+    local frozen="${1:-0}"
 
-    while ! _internal_run_error_message_tests "${fail_dir}" "${overwrite}"; do
+    if [[ $frozen -eq 1 ]]; then
+        # In frozen mode, we only run the tests once, because
+        # a) frozen does not auto-update, so you generally don't need to retry it,
+        # b) frozen is used by CI, which can't ask for user input
+        _internal_run_error_message_tests 1
+        return 0
+    fi
+
+    while ! _internal_run_error_message_tests; do
         read -r -p "Retry error message tests? [Y/n] " response
         if [[ "$response" == "n" || "$response" == "N" ]]; then
             exit 1
