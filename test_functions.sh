@@ -198,8 +198,13 @@ function assert_no_change {
 
         # The file used to be valid for stable, and was now modified to fit nightly, so we already have both versions.
         cp "${file}" "${base_dir}/nightly/${filename}"
-        checkout -- "${file}" # Get the original file back for stable
+        git checkout -- "${file}" # Get the original file back for stable
         mv "${file}" "${base_dir}/stable/${filename}"
+
+        # If a file contains the filename, it will now have a different path
+        sed -i -e "s|${filename}|nightly/${filename}|g" "${base_dir}/nightly/${filename}"
+        sed -i -e "s|${filename}|stable/${filename}|g" "${base_dir}/stable/${filename}"
+
     done < <(git ls-files --exclude-standard --modified --others -z -- "${dir}")
 
     [[ ${error} -eq 0 ]] || return 1
@@ -217,18 +222,31 @@ function _internal_run_error_message_tests {
     if [[ $frozen -eq 1 ]]; then
         echo "    err_span_check frozen mode enabled"
         export ERR_SPAN_CHECK="frozen"
-        try_silent cargo +stable llvm-cov test error_message_tests --workspace --lcov --output-path target/cov/err_stable/lcov.info -- --ignored || exit 1
-        try_silent cargo +nightly llvm-cov test error_message_tests --workspace --lcov --output-path target/cov/err_nightly/lcov.info -- --ignored || exit 1
+        try_silent cargo +stable llvm-cov test error_message_tests --workspace \
+            --lcov --output-path target/cov/err_stable/lcov.info \
+            -- --ignored \
+            || exit 1
+
+        try_silent cargo +nightly llvm-cov test error_message_tests --workspace \
+            --lcov --output-path target/cov/err_nightly/lcov.info \
+            -- --ignored \
+            || exit 1
     else
         assert_no_change "tests/fail" || return 1
 
         # Run stable tests
-        try_silent cargo +stable llvm-cov test error_message_tests --workspace --lcov --output-path target/cov/err_stable/lcov.info -- --ignored || return 1
+        try_silent cargo +stable llvm-cov test error_message_tests --workspace \
+            --lcov --output-path target/cov/err_stable/lcov.info \
+            -- --ignored \
+            || error=1
 
         assert_no_change "tests/fail" || return 1
 
         # Run nightly tests
-        try_silent cargo +nightly llvm-cov test error_message_tests --workspace --lcov --output-path target/cov/err_nightly/lcov.info -- --ignored || return 1
+        try_silent cargo +nightly llvm-cov test error_message_tests --workspace \
+            --lcov --output-path target/cov/err_nightly/lcov.info \
+            -- --ignored \
+            || error=1
 
         assert_no_change "tests/fail" "nightly" || return 1
     fi
