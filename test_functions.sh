@@ -222,31 +222,19 @@ function _internal_run_error_message_tests {
     if [[ $frozen -eq 1 ]]; then
         echo "    err_span_check frozen mode enabled"
         export ERR_SPAN_CHECK="frozen"
-        try_silent cargo +stable llvm-cov test error_message_tests --workspace \
-            --lcov --output-path target/cov/err_stable/lcov.info \
-            -- --ignored \
-            || exit 1
+        coverage err_stable try_silent cargo +stable test error_message_tests --workspace -- --ignored || exit 1
 
-        try_silent cargo +nightly llvm-cov test error_message_tests --workspace \
-            --lcov --output-path target/cov/err_nightly/lcov.info \
-            -- --ignored \
-            || exit 1
+        coverage err_nightly try_silent cargo +nightly test error_message_tests --workspace -- --ignored || exit 1
     else
         assert_no_change "tests/fail" || return 1
 
         # Run stable tests
-        try_silent cargo +stable llvm-cov test error_message_tests --workspace \
-            --lcov --output-path target/cov/err_stable/lcov.info \
-            -- --ignored \
-            || error=1
+        coverage err_stable try_silent cargo +stable test error_message_tests --workspace -- --ignored || error=1
 
         assert_no_change "tests/fail" || return 1
 
         # Run nightly tests
-        try_silent cargo +nightly llvm-cov test error_message_tests --workspace \
-            --lcov --output-path target/cov/err_nightly/lcov.info \
-            -- --ignored \
-            || error=1
+        coverage err_nightly try_silent cargo +nightly test error_message_tests --workspace -- --ignored || error=1
 
         assert_no_change "tests/fail" "nightly" || return 1
     fi
@@ -276,8 +264,7 @@ function _internal_run_error_message_tests {
 
     done < <(find "tests/fail" -type d -name stable -print0)
 
-    [[ ${error} -eq 0 ]] || return 1
-    return 0
+    return $error
 }
 
 # Runs the error message tests
