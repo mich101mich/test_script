@@ -174,7 +174,7 @@ function assert_no_change {
     local dir="$1" is_nightly="$2"
     assert_has_parameters assert_no_change "dir" # Nightly is optional
 
-    error=0
+    local error=0
     while IFS= read -r -d $'\0' file; do
         [[ $file != *.rs ]] && continue # Ignore non-test files
 
@@ -207,8 +207,7 @@ function assert_no_change {
 
     done < <(git ls-files --exclude-standard --modified --others -z -- "${dir}")
 
-    [[ ${error} -eq 0 ]] || return 1
-    return 0
+    return $error
 }
 
 # Internal function. See run_error_message_tests for details.
@@ -229,12 +228,12 @@ function _internal_run_error_message_tests {
         assert_no_change "tests/fail" || return 1
 
         # Run stable tests
-        coverage err_stable try_silent cargo +stable test error_message_tests --workspace -- --ignored || error=1
+        coverage err_stable try_silent cargo +stable test error_message_tests --workspace -- --ignored || return 1
 
         assert_no_change "tests/fail" || return 1
 
         # Run nightly tests
-        coverage err_nightly try_silent cargo +nightly test error_message_tests --workspace -- --ignored || error=1
+        coverage err_nightly try_silent cargo +nightly test error_message_tests --workspace -- --ignored || return 1
 
         assert_no_change "tests/fail" "nightly" || return 1
     fi
