@@ -40,7 +40,7 @@ fi
 
 cd "${base_dir}"
 
-export RUSTFLAGS="-D warnings"
+export CARGO_BUILD_WARNINGS="deny"
 export RUSTDOCFLAGS="-D warnings"
 mkdir -p target/cov/nightly
 
@@ -98,6 +98,7 @@ fi
 ########
 echo "Minimum Supported Rust Version Tests"
 
+export RUSTFLAGS="-D warnings" # CARGO_BUILD_WARNINGS doesn't exist on MSRV
 MSRV=$(read_msrv "${base_dir}/Cargo.toml")
 echo "    Minimum supported Rust version: ${MSRV}"
 
@@ -109,6 +110,7 @@ for override in ${msrv_overrides}; do
     try_silent cargo "+${MSRV}" update -p "${override%@*}" --precise "${override#*@}"
 done
 try_silent cargo "+${MSRV}" test --workspace
+unset RUSTFLAGS
 
 ########
 # minimal versions
